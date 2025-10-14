@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -19,6 +20,8 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/api/option"
 )
+
+//lint:file-ignore ST1005 ...
 
 // Holds basic information about a file.
 type FileMetadata struct {
@@ -56,12 +59,12 @@ func (instance *LocalFileStorage) SaveFile(reader io.Reader) (string, error) {
 
 	file, err := os.Create(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to create file: %w", err)
+		return "", fmt.Errorf("Failed to create file: %w", err)
 	}
 	defer file.Close()
 
 	if _, err := io.Copy(file, reader); err != nil {
-		return "", fmt.Errorf("failed to write file: %w", err)
+		return "", fmt.Errorf("Failed to write file: %w", err)
 	}
 
 	return id, nil
@@ -125,7 +128,8 @@ type S3Config struct {
 
 // Initializes an S3FileStorage using provided config.
 func NewS3FileStorage(cfg S3Config) (*S3FileStorage, error) {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	creds := aws.NewCredentialsCache(
 		credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
@@ -149,7 +153,8 @@ func NewS3FileStorage(cfg S3Config) (*S3FileStorage, error) {
 }
 
 func (instance *S3FileStorage) SaveFile(reader io.Reader) (string, error) {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	id := uuid.New().String()
 	key := id
@@ -180,7 +185,8 @@ func (instance *S3FileStorage) UpdateFile(id string, reader io.Reader) error {
 }
 
 func (instance *S3FileStorage) RetrieveFile(id string) (io.ReadCloser, error) {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	key := id
 
@@ -198,7 +204,8 @@ func (instance *S3FileStorage) RetrieveFile(id string) (io.ReadCloser, error) {
 }
 
 func (instance *S3FileStorage) DeleteFile(id string) error {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	key := id
 
@@ -229,7 +236,8 @@ type GCSConfig struct {
 
 // Initializes a GCSFileStorage using the given config.
 func NewGCSFileStorage(cfg GCSConfig) (*GCSFileStorage, error) {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	var (
 		client *storage.Client
@@ -251,7 +259,8 @@ func NewGCSFileStorage(cfg GCSConfig) (*GCSFileStorage, error) {
 }
 
 func (instance *GCSFileStorage) SaveFile(reader io.Reader) (string, error) {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	id := uuid.New().String()
 	key := id
@@ -276,7 +285,8 @@ func (instance *GCSFileStorage) UpdateFile(id string, reader io.Reader) error {
 }
 
 func (instance *GCSFileStorage) RetrieveFile(id string) (io.ReadCloser, error) {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	it := instance.Client.Bucket(instance.BucketName).Objects(ctx, &storage.Query{
 		Prefix: id,
@@ -295,7 +305,8 @@ func (instance *GCSFileStorage) RetrieveFile(id string) (io.ReadCloser, error) {
 }
 
 func (instance *GCSFileStorage) DeleteFile(id string) error {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	it := instance.Client.Bucket(instance.BucketName).Objects(ctx, &storage.Query{
 		Prefix: id,
@@ -344,7 +355,8 @@ func NewAzureBlobStorage(cfg AzureConfig) (*AzureBlobStorage, error) {
 }
 
 func (instance *AzureBlobStorage) SaveFile(reader io.Reader) (string, error) {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	id := uuid.New().String()
 	blobName := id
@@ -369,7 +381,8 @@ func (instance *AzureBlobStorage) UpdateFile(id string, reader io.Reader) error 
 }
 
 func (instance *AzureBlobStorage) RetrieveFile(id string) (io.ReadCloser, error) {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	prefix := id
 	pager := instance.Client.NewListBlobsFlatPager(instance.Container, nil)
@@ -396,7 +409,8 @@ func (instance *AzureBlobStorage) RetrieveFile(id string) (io.ReadCloser, error)
 }
 
 func (instance *AzureBlobStorage) DeleteFile(id string) error {
-	ctx := context.TODO()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
 
 	prefix := id
 	pager := instance.Client.NewListBlobsFlatPager(instance.Container, nil)
