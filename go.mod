@@ -1,4 +1,4 @@
-module FileStorageUtilities
+module github.com/DerrohXy/FileStorageUtilities
 
 go 1.24.0
 
