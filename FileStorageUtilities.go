@@ -23,17 +23,11 @@ import (
 
 //lint:file-ignore ST1005 ...
 
-// Holds basic information about a file.
-type FileMetadata struct {
-	Name        string
-	ContentType string
-}
-
 // Defines the contract for any file storage backend.
 type FileStorage interface {
-	SaveFile(reader io.Reader, meta FileMetadata) (string, error)
-	UpdateFile(id string, r io.Reader, meta FileMetadata) error
-	RetrieveFile(id string) (io.ReadCloser, FileMetadata, error)
+	SaveFile(reader io.Reader) (string, error)
+	UpdateFile(id string, reader io.Reader) error
+	RetrieveFile(id string) (io.ReadCloser, error)
 	DeleteFile(id string) error
 }
 
@@ -61,6 +55,7 @@ func (instance *LocalFileStorage) SaveFile(reader io.Reader) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Failed to create file: %w", err)
 	}
+
 	defer file.Close()
 
 	if _, err := io.Copy(file, reader); err != nil {
@@ -80,6 +75,7 @@ func (instance *LocalFileStorage) UpdateFile(id string, reader io.Reader) error 
 	if err != nil {
 		return fmt.Errorf("Failed to open file for update: %w", err)
 	}
+
 	defer file.Close()
 
 	if _, err := io.Copy(file, reader); err != nil {
@@ -127,16 +123,17 @@ type S3Config struct {
 }
 
 // Initializes an S3FileStorage using provided config.
-func NewS3FileStorage(cfg S3Config) (*S3FileStorage, error) {
+func NewS3FileStorage(configuration S3Config) (*S3FileStorage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	creds := aws.NewCredentialsCache(
-		credentials.NewStaticCredentialsProvider(cfg.AccessKey, cfg.SecretKey, ""),
+		credentials.NewStaticCredentialsProvider(configuration.AccessKey, configuration.SecretKey, ""),
 	)
 	awsCfg, err := config.LoadDefaultConfig(
 		ctx,
-		config.WithRegion(cfg.Region),
+		config.WithRegion(configuration.Region),
 		config.WithCredentialsProvider(creds),
 	)
 
@@ -148,12 +145,13 @@ func NewS3FileStorage(cfg S3Config) (*S3FileStorage, error) {
 
 	return &S3FileStorage{
 		Client:     client,
-		BucketName: cfg.Bucket,
+		BucketName: configuration.Bucket,
 	}, nil
 }
 
 func (instance *S3FileStorage) SaveFile(reader io.Reader) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	id := uuid.New().String()
@@ -171,6 +169,7 @@ func (instance *S3FileStorage) SaveFile(reader io.Reader) (string, error) {
 			Key:    aws.String(key),
 			Body:   bytes.NewReader(buf.Bytes()),
 		})
+
 	if err != nil {
 		return "", fmt.Errorf("Failed to upload file: %w", err)
 	}
@@ -179,13 +178,36 @@ func (instance *S3FileStorage) SaveFile(reader io.Reader) (string, error) {
 }
 
 func (instance *S3FileStorage) UpdateFile(id string, reader io.Reader) error {
-	_, err := instance.SaveFile(reader)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 
-	return err
+	defer cancel()
+
+	// id := uuid.New().String()
+	key := id
+
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, reader); err != nil {
+		return fmt.Errorf("Failed to read file data: %w", err)
+	}
+
+	_, err := instance.Client.PutObject(
+		ctx,
+		&s3.PutObjectInput{
+			Bucket: aws.String(instance.BucketName),
+			Key:    aws.String(key),
+			Body:   bytes.NewReader(buf.Bytes()),
+		})
+
+	if err != nil {
+		return fmt.Errorf("Failed to upload file: %w", err)
+	}
+
+	return nil
 }
 
 func (instance *S3FileStorage) RetrieveFile(id string) (io.ReadCloser, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	key := id
@@ -196,6 +218,7 @@ func (instance *S3FileStorage) RetrieveFile(id string) (io.ReadCloser, error) {
 			Bucket: aws.String(instance.BucketName),
 			Key:    aws.String(key),
 		})
+
 	if err != nil {
 		return nil, fmt.Errorf("Failed to retrieve file: %w", err)
 	}
@@ -205,6 +228,7 @@ func (instance *S3FileStorage) RetrieveFile(id string) (io.ReadCloser, error) {
 
 func (instance *S3FileStorage) DeleteFile(id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	key := id
@@ -237,6 +261,7 @@ type GCSConfig struct {
 // Initializes a GCSFileStorage using the given config.
 func NewGCSFileStorage(cfg GCSConfig) (*GCSFileStorage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	var (
@@ -248,6 +273,7 @@ func NewGCSFileStorage(cfg GCSConfig) (*GCSFileStorage, error) {
 		ctx,
 		option.WithCredentialsJSON([]byte(cfg.CredentialsJSON)),
 	)
+
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create GCS client: %w", err)
 	}
@@ -260,6 +286,7 @@ func NewGCSFileStorage(cfg GCSConfig) (*GCSFileStorage, error) {
 
 func (instance *GCSFileStorage) SaveFile(reader io.Reader) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	id := uuid.New().String()
@@ -279,19 +306,36 @@ func (instance *GCSFileStorage) SaveFile(reader io.Reader) (string, error) {
 }
 
 func (instance *GCSFileStorage) UpdateFile(id string, reader io.Reader) error {
-	_, err := instance.SaveFile(reader)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 
-	return err
+	defer cancel()
+
+	// id := uuid.New().String()
+	key := id
+
+	writer := instance.Client.Bucket(instance.BucketName).Object(key).NewWriter(ctx)
+
+	if _, err := io.Copy(writer, reader); err != nil {
+		return fmt.Errorf("Failed to upload to GCS: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("Failed to finalize upload: %w", err)
+	}
+
+	return nil
 }
 
 func (instance *GCSFileStorage) RetrieveFile(id string) (io.ReadCloser, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	it := instance.Client.Bucket(instance.BucketName).Objects(ctx, &storage.Query{
 		Prefix: id,
 	})
 	objAttrs, err := it.Next()
+
 	if err != nil {
 		return nil, fmt.Errorf("File not found for id: %s", id)
 	}
@@ -306,12 +350,14 @@ func (instance *GCSFileStorage) RetrieveFile(id string) (io.ReadCloser, error) {
 
 func (instance *GCSFileStorage) DeleteFile(id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	it := instance.Client.Bucket(instance.BucketName).Objects(ctx, &storage.Query{
 		Prefix: id,
 	})
 	objAttrs, err := it.Next()
+
 	if err != nil {
 		return fmt.Errorf("file not found for id: %s", id)
 	}
@@ -334,10 +380,10 @@ type AzureConfig struct {
 }
 
 // Initializes the Azure Blob client.
-func NewAzureBlobStorage(cfg AzureConfig) (*AzureBlobStorage, error) {
-	url := fmt.Sprintf("https://%s.blob.core.windows.net/", cfg.AccountName)
+func NewAzureBlobStorage(configuration AzureConfig) (*AzureBlobStorage, error) {
+	url := fmt.Sprintf("https://%s.blob.core.windows.net/", configuration.AccountName)
 
-	cred, err := azblob.NewSharedKeyCredential(cfg.AccountName, cfg.AccountKey)
+	cred, err := azblob.NewSharedKeyCredential(configuration.AccountName, configuration.AccountKey)
 	if err != nil {
 		return nil, fmt.Errorf("Invalid Azure credentials: %w", err)
 	}
@@ -349,13 +395,14 @@ func NewAzureBlobStorage(cfg AzureConfig) (*AzureBlobStorage, error) {
 
 	return &AzureBlobStorage{
 		Client:     client,
-		Container:  cfg.Container,
+		Container:  configuration.Container,
 		AccountURL: url,
 	}, nil
 }
 
 func (instance *AzureBlobStorage) SaveFile(reader io.Reader) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	id := uuid.New().String()
@@ -375,13 +422,29 @@ func (instance *AzureBlobStorage) SaveFile(reader io.Reader) (string, error) {
 }
 
 func (instance *AzureBlobStorage) UpdateFile(id string, reader io.Reader) error {
-	_, err := instance.SaveFile(reader)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 
-	return err
+	defer cancel()
+
+	// id := uuid.New().String()
+	blobName := id
+
+	buf := new(bytes.Buffer)
+	if _, err := io.Copy(buf, reader); err != nil {
+		return fmt.Errorf("Failed to read file: %w", err)
+	}
+
+	_, err := instance.Client.UploadBuffer(ctx, instance.Container, blobName, buf.Bytes(), nil)
+	if err != nil {
+		return fmt.Errorf("Failed to upload blob: %w", err)
+	}
+
+	return nil
 }
 
 func (instance *AzureBlobStorage) RetrieveFile(id string) (io.ReadCloser, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	prefix := id
@@ -410,6 +473,7 @@ func (instance *AzureBlobStorage) RetrieveFile(id string) (io.ReadCloser, error)
 
 func (instance *AzureBlobStorage) DeleteFile(id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+
 	defer cancel()
 
 	prefix := id
