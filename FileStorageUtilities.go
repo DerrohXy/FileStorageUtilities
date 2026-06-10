@@ -3,6 +3,7 @@ package filestorageutilities
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -252,10 +253,24 @@ type GCSFileStorage struct {
 	BucketName string
 }
 
+// Holds credentials
+type GCSCredentials struct {
+	Type                    string `json:"type"`
+	ProjectID               string `json:"project_id"`
+	PrivateKeyID            string `json:"private_key_id"`
+	PrivateKey              string `json:"private_key"`
+	ClientEmail             string `json:"client_email"`
+	ClientID                string `json:"client_id"`
+	AuthURI                 string `json:"auth_uri"`
+	TokenURI                string `json:"token_uri"`
+	AuthProviderX509CertURL string `json:"auth_provider_x509_cert_url"`
+	ClientX509CertURL       string `json:"client_x509_cert_url"`
+}
+
 // Holds configuration for GCS.
 type GCSConfig struct {
-	Bucket          string
-	CredentialsJSON string
+	Bucket      string
+	Credentials GCSCredentials
 }
 
 // Initializes a GCSFileStorage using the given config.
@@ -269,9 +284,14 @@ func NewGCSFileStorage(cfg GCSConfig) (*GCSFileStorage, error) {
 		err    error
 	)
 
+	jsonData, err := json.Marshal(cfg.Credentials)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to marshal credentials struct: %v", err)
+	}
+
 	client, err = storage.NewClient(
 		ctx,
-		option.WithCredentialsJSON([]byte(cfg.CredentialsJSON)),
+		option.WithCredentialsJSON(jsonData),
 	)
 
 	if err != nil {
